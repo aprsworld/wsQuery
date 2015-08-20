@@ -105,4 +105,17 @@ function query_load (query, name) {
 	return query;
 }
 
-console.log(JSON.stringify(query_load(require("./simple.json"), "sample")));
+if (process.argv < 3) {
+	console.log('Invalid Arguments!');
+	console.log('Syntax: node ws-query.js [config_file]');
+	return;
+}
+
+var config = process.argv[2];
+if (config[0] != '/') {
+	config = "./" + config;
+}
+
+var res = query_load(require(config), config);
+
+console.log(util.inspect(res, { depth: null, colors: true}));
