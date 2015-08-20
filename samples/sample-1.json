@@ -1,0 +1,39 @@
+{
+	"modbus_readRegisters": {
+		"port":		502,
+		"address":	"192.168.30.230",
+		"_define_":		
+"var modbus = require('jsmodbus');\nvar output;\nvar client = modbus.createTCPClient(port, address, function(err) {\n        if (err) {\n                client.close();\n                output = \"ERROR CONNECTING!\";\n                return;\n        }\n\n        client.readInputRegister(register_start, register_count, function(resp, err) {\n                if (err) {\n                        client.close();\n                        output = \"ERROR READING!\";\n                        return;\n                }\n                output = resp;\n\n                client.close();\n        });\n});\n\nwhile (output == undefined) {\n        require('deasync').sleep(100);\n};\noutput;"
+	},
+
+	"All Registers": {
+		"_invoke_":	"modbus_readRegisters",
+		"register_start":	0,
+		"register_count":	46
+	},
+
+
+	"wx_analog": {
+		"offset":	18,
+		"size":		3,
+		"channel":	0,
+		"current": {
+			"_invoke_":	"modbus_readRegisters",
+			"register_start":	18,
+			"register_count":	1
+		},
+		"average": {
+			"_invoke_":	"modbus_readRegisters",
+			"register_start":	19,
+			"register_count":	1
+		},
+		"deviation": 	null
+	},
+
+	"Sensors": {
+		"Ambient Temperature": {
+			"invoke_":	"wx_analog",
+			"channel":	4
+		}
+	}
+}
