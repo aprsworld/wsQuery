@@ -2,6 +2,7 @@
 var vm = require('vm');
 var util = require('util');
 
+var hooks = null;
 function object_merge () {
 	var length = arguments.length;
 	var target = arguments[0];
@@ -23,6 +24,15 @@ function object_merge () {
 
 	// XXX: BUG: How to properly handle Arrays and "Functions"?
 
+	// Handle "aspect" hooks for processing...
+	//var hooks = target.prototype.merge_hooks;
+	if (!hooks) {
+		hooks = {
+			before: function(prop, dst, src) { return src; },
+			after: function(prop, dst, src) { return dst; }
+		};
+	}
+
 	// Merge all the arguments...
 	for (var i = 1; i < length; i++) {
 		var extension = arguments[i];
@@ -32,6 +42,9 @@ function object_merge () {
 			// XXX: Should we warn if extension is target?
 			continue;
 		}
+
+		// Call hook before processing object
+		//extension = hooks.before(extension); // XXX: Seperate hook?
 
 		// Handle extensions that are not objects
 		if (typeof extension !== 'object') {
@@ -58,7 +71,12 @@ function object_merge () {
 			}
 
 			// Do the actual merge
+			// XXX: Flag to disable cloning?
 			if (src && typeof src === 'object') {
+
+				// Call hook before processing object
+				src = hooks.before(prop, dst, src);
+
 				// Cloning src
 				var clone = {};
 
@@ -68,13 +86,24 @@ function object_merge () {
 				}
 
 				// Do the actual clone and merge...
-				target[prop] = object_merge(clone, dst, src);
+				clone = object_merge(clone, dst, src);
+
+				// Call hook after processing object
+				clone = hooks.after(prop, clone, src);
+
+				if (clone === undefined) {
+					continue;
+				}
+				target[prop] = clone;
 
 			// Standard property, no merge needed.
 			} else if (src !== undefined) {
 				target[prop] = src;
 			}
 		}
+
+		// Call hook after processing object
+		//last = hooks.after(extension); // XXX: Seperate hook?
 	}
 
 	// The last extension was not an object, so return that value
@@ -87,72 +116,63 @@ function object_merge () {
 
 var vm_programs = { };
 var vm_defaults = { };
+var hooks = {
+	before: function(prop, dst, src) { return src; },
+	after: query_hook
+};
 
-function query_load_array_item (query, index) {
-	var res = query_load(query, '_ARRAY_');	// XXX: TODO:
-	if (res === undefined) {
-		return;
-	}
-	this[index] = res;
-}
+function query_hook (prop, dst, src) {
 
-function query_load_object (query, name) {
-	var out = {};
-	
-	// Handle Arrays
-	if (Array.isArray(query)) {
-		out = [];
-		query.forEach(query_load_array_item, out);
-		return out;
+	// Not an object, just return it as is
+	if (typeof dst !== 'object') {
+		return dst;
 	}
 
-
-	// Process Object Properties
-	for (var p in query) {
-		var res = query_load(query[p], p);
-		if (res === undefined) {
-			continue;
+	// Define a macro object
+	if (dst._define_) { // XXX: Not a string?
+		var define = dst._define_;
+		vm_defaults[define] = dst;
+		// XXX: dst._code_ might not be a string!
+		if (dst._code_) {
+			var code = dst._code_;
+			vm_programs[define] = new vm.Script(code, {
+					filename: define,
+					displayErrors: false
+			});
 		}
-		out[p] = res;
-	}
-
-	// Process a "Code" Object
-	if (query._define_) {
-		vm_programs[name] = new vm.Script(query._define_, { filename: name, displayErrors: false });
-		vm_defaults[name] = query;
 		return undefined;
 	}
 
-	// Process an "Executable" Object
-	if (out._invoke_) {
-		var vm_global = object_merge({}, vm_defaults[out._invoke_], out);
-		vm_global.console = console;
-		vm_global.require = require;
-		var vm_ctx = vm.createContext(vm_global);
-		return vm_programs[out._invoke_].runInContext(vm_ctx, { displayErrors: true, timeout: 60 * 1000 });
+	// Execute a macro object
+	if (dst._invoke_) { // XXX: Not a string?
+		var invoke = dst._invoke_;
+		var ctx = object_merge({}, vm_defaults[invoke], dst);
+
+		// We are a simple macro object with no code...
+		if (!vm_programs[invoke]) {
+			return ctx;
+		}
+
+		// We have code to run... Do it in a "sandbox".
+		ctx.console = console;
+		ctx.require = require;
+		var vm_ctx = vm.createContext(ctx);
+		return vm_programs[invoke].runInContext(vm_ctx, {
+				displayErrors: true,
+				timeout: 60 * 1000
+		});
 	}
 
-	// Return Object
-	return out;
+	// Ignore a comment object
+	if (dst._comment_) {
+		return undefined;
+	}
+
+	// Return input
+	return dst;
 }
 
-function query_load (query, name) {	
-
-	// Handle edge-cases
-	if (query === undefined || query === null) {
-		return query;
-	}
-
-	// Process Objects
-	if (typeof query === 'object') {
-		return query_load_object(query, name);
-	}
-
-	// Return Primatives
-	return query;
-}
-
-if (process.argv < 3) {
+if (process.argv.length < 3) {
 	console.log('Invalid Arguments!');
 	console.log('Syntax: node ws-query.js [config_file]');
 	return;
@@ -163,9 +183,9 @@ if (config[0] != '/') {
 	config = "./" + config;
 }
 
-var res = query_load(require(config), config);
+var query = object_merge({}, require(config));
 
-console.log(util.inspect(res, { depth: null, colors: true}));
+console.log(util.inspect(query, { depth: null, colors: true}));
 
 //console.log(util.inspect(process._getActiveRequests(), { depth: 5}));
 //console.log(util.inspect(process._getActiveHandles(), { depth: 5 }));

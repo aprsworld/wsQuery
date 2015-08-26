@@ -2,7 +2,8 @@
 	"modbus_readRegisters": {
 		"port":		502,
 		"address":	"192.168.30.230",
-		"_define_":		
+		"_define_":	"modbus_readRegisters",
+		"_code_":		
 "var modbus = require('jsmodbus');\nvar output;\nvar client = modbus.createTCPClient(port, address, function(err) {\n        if (err) {\n                client.close();\n                output = \"ERROR CONNECTING!\";\n                return;\n        }\n\n        client.readInputRegister(register_start, register_count, function(resp, err) {\n                if (err) {\n                        client.close();\n                        output = \"ERROR READING!\";\n                        return;\n                }\n                output = resp;\n\n                client.close();\n        });\n});\n\nwhile (output == undefined) {\n        require('deasync').sleep(100);\n};\noutput;"
 	},
 
